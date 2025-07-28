@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Объединение метаданных и изображений</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/piexifjs/1.0.0/piexif.min.js"></script>
+    <style>
+        .container { max-width: 800px; margin: 20px auto; }
+        .upload-area { margin: 20px 0; padding: 20px; border: 2px dashed #ccc; }
+        button { padding: 10px 20px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+        #result { margin-top: 20px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Объединение метаданных изображений</h1>
+        
+        <div class="upload-area">
+            <h3>Шаг 1: Загрузите оригинальное изображение (с метаданными)</h3>
+            <input type="file" id="original" accept="image/jpeg">
+            
+            <h3>Шаг 2: Загрузите копию изображения (без метаданных)</h3>
+            <input type="file" id="copy" accept="image/jpeg">
+        </div>
+
+        <button id="process" disabled>Обработать изображения</button>
+        
+        <div id="result" class="hidden">
+            <h3>Результат:</h3>
+            <a id="downloadLink" download="image_with_metadata.jpg">
+                <img id="resultImage" alt="Результат">
+            </a>
+            <p>Изображение содержит пиксели из копии и метаданные оригинала.</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const originalInput = document.getElementById('original');
+            const copyInput = document.getElementById('copy');
+            const processBtn = document.getElementById('process');
+            const resultDiv = document.getElementById('result');
+            const resultImage = document.getElementById('resultImage');
+            const downloadLink = document.getElementById('downloadLink');
+
+            let originalFile = null;
+            let copyFile = null;
+
+            // Обработчики загрузки файлов
+            originalInput.addEventListener('change', (e) => {
+                originalFile = e.target.files[0];
+                checkFilesReady();
+            });
+
+            copyInput.addEventListener('change', (e) => {
+                copyFile = e.target.files[0];
+                checkFilesReady();
+            });
+
+            // Активация кнопки когда оба файла выбраны
+            function checkFilesReady() {
+                processBtn.disabled = !(originalFile && copyFile);
+            }
+
+            // Основной процесс обработки
+            processBtn.addEventListener('click', async () => {
+                if (!originalFile || !copyFile) return;
+
+                try {
+                    // Чтение метаданных из оригинала
+                    const metadata = await getMetadata(originalFile);
+                    
+                    // Создание изображения из копии
+                    const imageData = await createImage(copyFile);
+                    
+                    // Встраивание метаданных в копию
+                    const combinedImage = embedMetadata(imageData, metadata);
+                    
+                    // Отображение результата
+                    resultImage.src = combinedImage;
+                    downloadLink.href = combinedImage;
+                    resultDiv.classList.remove('hidden');
+                } catch (error) {
+                    console.error('Ошибка обработки:', error);
+                    alert('Произошла ошибка: ' + error.message);
+                }
+            });
+
+            // Чтение метаданных через EXIF.js
+            function getMetadata(file) {
+                return new Promise((resolve, reject) => {
+                    EXIF.getData(file, function() {
+                        try {
+                            const allMetaData = EXIF.getAllTags(this);
+                            if (!allMetaData) reject(new Error('Метаданные не найдены'));
+                            resolve(allMetaData);
+                        } catch (e) {
+                            reject(e);
+                        }
+                    });
+                });
+            }
+
+            // Создание Data URL из изображения
+            function createImage(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            // Встраивание метаданных в изображение
+            function embedMetadata(imageData, metadata) {
+                try {
+                    // Преобразование метаданных в формат EXIF
+                    const exifStr = piexif.dump(metadata);
+                    
+                    // Разделение Data URL на части
+                    const parts = imageData.split(',');
+                    const header = parts[0];
+                    const imageBody = parts[1];
+                    
+                    // Встраивание метаданных
+                    const newImageData = piexif.insert(exifStr, imageBody);
+                    return header + ',' + newImageData;
+                } catch (e) {
+                    throw new Error('Ошибка встраивания метаданных: ' + e.message);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
